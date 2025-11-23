@@ -81,7 +81,7 @@ financial-advisor/
 1. **Clone and Navigate**
 
 ```bash
-cd /Users/ashutosh/BITS/Financial-Advisor
+cd /Users/ashutosh/Financial-Advisor
 ```
 
 2. **Activate Virtual Environment**
@@ -346,12 +346,7 @@ Full API documentation available at:
 - Use environment variables for sensitive data
 - In production, use proper authentication
 
-## 🎓 Academic Context
 
-**Dissertation**: Multi-Agent System for Personalized Financial Advisory
-**Institution**: BITS Pilani
-**Program**: M. Tech in AIML
-**Course**: AIMLCZG628T - Dissertation
 
 ## 📚 References
 
