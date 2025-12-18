@@ -55,9 +55,36 @@ tmp/
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # Distribution
 dist/
 build/
 *.egg-info/
+
+# MLflow
+mlruns/
+mlartifacts/
+*.mlflow.db
+mlflow.db
+
+# Model artifacts and outputs
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+feature_importance.csv
+selected_features.json
+selected_features.txt
+best_params.json
+evaluation_metrics.json
+model_metadata.json
+classification_report_*.txt
+confusion_matrix_*.csv
+
+# Generated plots and figures
+*.png
+*.jpg
+*.jpeg
+*.svg
+figures/
+plots/

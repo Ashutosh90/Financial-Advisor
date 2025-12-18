@@ -112,7 +112,7 @@ User Interface (Streamlit)
 **Purpose**: Generate personalized recommendations using LLM
 
 **Key Features**:
-- OpenAI GPT-3.5 integration
+- OpenAI GPT4 integration
 - Context-aware prompting
 - Portfolio allocation
 - Expected returns calculation
@@ -649,5 +649,5 @@ Volumes:
 ---
 
 **Document Version**: 1.0
-**Last Updated**: November 2024
-**Author**: Ashutosh (BITS Pilani M.Tech AIML)
+**Last Updated**: November 2025
+**Author**: Ashutosh Kumar
