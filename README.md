@@ -31,9 +31,10 @@ An intelligent, multi-agent AI system that provides personalized financial inves
 - **Backend**: FastAPI
 - **Frontend**: Streamlit
 - **ML**: XGBoost, Scikit-learn
+- **ML Tracking**: MLflow (experiment tracking, model registry)
 - **Explainability**: SHAP, LIME
 - **LLM**: OpenAI GPT-3.5
-- **Database**: SQLite
+- **Database**: SQLite (user data + ML training data)
 - **Data Sources**: yfinance, RBI (simulated)
 
 ## 📁 Project Structure
@@ -58,15 +59,74 @@ financial-advisor/
 │   └── main.py                    # FastAPI app
 ├── frontend/
 │   └── streamlit_app.py           # Streamlit dashboard
-├── data/                          # SQLite database
+├── data/
+│   ├── financial_advisor.db       # User data & sessions
+│   └── risk_profiling.db          # ML training data
 ├── logs/                          # Application logs
 ├── models/                        # Trained ML models
+│   ├── risk_profiling_model.pkl   # XGBoost model
+│   ├── label_encoder.pkl          # Target encoder
+│   ├── selected_features.json     # Feature list
+│   ├── best_params.json           # Hyperparameters
+│   └── evaluation_metrics.json    # Model metrics
+├── mlruns/                        # MLflow tracking data
+├── data_loader_to_db.ipynb        # Load CSV to SQLite
+├── risk_profiling_ml_pipeline.ipynb  # Complete ML pipeline
 ├── requirements.txt               # Python dependencies
 ├── Dockerfile                     # Docker image
 ├── docker-compose.yml             # Docker orchestration
 ├── .env.example                   # Environment variables template
 └── README.md                      # This file
 ```
+
+## 🧠 ML Pipeline & Model Training
+
+### Risk Profiling Model
+
+The risk profiling system uses XGBoost trained on historical financial data:
+
+#### Data Pipeline
+
+1. **Data Loading** (`data_loader_to_db.ipynb`)
+   - Loads CSV data into SQLite database
+   - Creates `risk_profiling_monthly_data` table
+   - Schema: 107 features including demographics, financials, behavioral metrics
+   - Database: `data/risk_profiling.db`
+
+2. **ML Pipeline** (`risk_profiling_ml_pipeline.ipynb`)
+   - **Data Loading**: Queries SQLite with time-based splits
+   - **Preprocessing**: Handle missing values, encode categoricals
+   - **Feature Engineering**: PII removal, correlation analysis
+   - **Feature Selection**: RFE, SelectFromModel, SelectKBest
+   - **Model Training**: XGBoost with hyperparameter tuning
+   - **Evaluation**: Training, Validation, Test splits
+   - **MLflow Tracking**: All experiments logged
+   - **Model Persistence**: Pickle + MLflow Model Registry
+
+#### Key Features
+
+- **Database-First Approach**: All data stored in SQLite, no CSV dependencies
+- **MLflow Integration**: Complete experiment tracking and model versioning
+- **Comprehensive Artifacts**: Model, encoder, features, metrics all saved
+- **Production Ready**: Trained models in `models/` directory
+- **Performance**: ~97-98% accuracy across all datasets
+
+#### Model Files
+
+- `risk_profiling_model.pkl`: Trained XGBoost classifier
+- `label_encoder.pkl`: Target variable encoder
+- `selected_features.json`: List of features used
+- `best_params.json`: Optimized hyperparameters
+- `evaluation_metrics.json`: Performance metrics
+- `feature_importance.csv`: Feature importance scores
+
+#### MLflow Tracking
+
+All experiments tracked in `mlruns/`:
+- Hyperparameter tuning results
+- Model performance metrics
+- Feature importance
+- Model registry with versioning
 
 ## 🚀 Getting Started
 
@@ -123,8 +183,25 @@ LOG_LEVEL=INFO
 5. **Create Required Directories**
 
 ```bash
-mkdir -p data logs models
+mkdir -p data logs models mlruns
 ```
+
+6. **Setup Databases** (Optional - for ML training)
+
+The pre-trained model is included, but to retrain:
+
+```bash
+# 1. Load data into SQLite (if you have the CSV)
+jupyter notebook data_loader_to_db.ipynb
+
+# 2. Run complete ML pipeline
+jupyter notebook risk_profiling_ml_pipeline.ipynb
+```
+
+This creates:
+- `data/risk_profiling.db`: Training data
+- `models/`: Trained model artifacts
+- `mlruns/`: MLflow tracking data
 
 ## 🏃 Running the Application
 
@@ -310,6 +387,23 @@ python backend/main.py
 - Verify API key in `.env`
 - Check API key validity
 - Ensure sufficient credits
+
+### MLflow UI (Optional)
+
+To view experiment tracking and model registry:
+
+```bash
+# From project root
+mlflow ui
+
+# Access at: http://localhost:5000
+```
+
+This shows:
+- All training runs with metrics
+- Hyperparameter comparison
+- Model registry with versions
+- Artifact storage
 
 ## 🧰 Development
 

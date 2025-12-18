@@ -81,31 +81,51 @@ User Interface (Streamlit)
 **Key Features**:
 - XGBoost classification model
 - Risk categorization (Conservative, Moderate, Aggressive)
-- Feature engineering
+- Feature engineering and selection
 - Probability distribution
+- MLflow experiment tracking
 
 **Technologies**:
 - XGBoost
 - Scikit-learn
+- MLflow (model tracking and registry)
+- SQLite (training data storage)
 - Pandas for data processing
 
-**Risk Assessment Features**:
+**Data Pipeline**:
 ```python
-1. Monthly Income (normalized)
-2. Savings Ratio (income - expenses / income)
-3. Investment to Income Ratio
-4. Age Factor (risk capacity decreases with age)
-5. Investment Duration (longer = more risk capacity)
+1. Data Storage:
+   - SQLite database: data/risk_profiling.db
+   - Table: risk_profiling_monthly_data
+   - 107 features including demographics, financials, behavioral metrics
+   - Loaded via: data_loader_to_db.ipynb
+
+2. ML Pipeline (risk_profiling_ml_pipeline.ipynb):
+   - Data loading from SQLite with time-based splits
+   - Preprocessing: missing values, encoding
+   - PII removal and correlation analysis
+   - Feature selection: RFE, SelectFromModel, SelectKBest
+   - Hyperparameter tuning with GridSearchCV
+   - Model evaluation on train/validation/test
+   - MLflow tracking for all experiments
+   - Model persistence: pickle + MLflow registry
+
+3. Model Artifacts (models/):
+   - risk_profiling_model.pkl: Trained XGBoost
+   - label_encoder.pkl: Target encoder
+   - selected_features.json: 39 selected features
+   - best_params.json: Optimized hyperparameters
+   - evaluation_metrics.json: Performance metrics
+   - feature_importance.csv: Feature importance scores
 ```
 
-**Model Training**:
+**Model Performance**:
 ```python
-# Synthetic data generation for initial model
-- 1000 samples with varied profiles
-- Features: income, savings, duration, age
-- Labels: Risk categories (0, 1, 2)
-- Model: XGBoost with 100 estimators
-- Saved as: models/risk_model.json
+- Training Accuracy: ~99%
+- Validation Accuracy: ~98%
+- Test Accuracy: ~98%
+- Features: 39 selected from 107 original
+- Method: Univariate feature selection (best performer)
 ```
 
 ### 2.4 Advisor Agent
@@ -213,9 +233,14 @@ Logging: Loguru
 ### 3.2 Machine Learning
 ```yaml
 Risk Model: XGBoost Classifier
+ML Tracking: MLflow (experiments, model registry)
+Data Storage: SQLite (risk_profiling.db)
 Explainability: SHAP, LIME
 Data Processing: Pandas, NumPy
 Feature Engineering: Custom transformations
+Feature Selection: RFE, SelectFromModel, SelectKBest
+Hyperparameter Tuning: GridSearchCV
+Pipeline: Jupyter notebooks (data_loader_to_db, risk_profiling_ml_pipeline)
 ```
 
 ### 3.3 LLM Integration
@@ -243,7 +268,23 @@ Caching: In-memory + database
 
 ---
 
-## 4. Database Schema
+## 4. Database Architecture
+
+### 4.0 Database Overview
+
+The system uses two separate SQLite databases:
+
+1. **Application Database** (`data/financial_advisor.db`)
+   - User profiles and sessions
+   - Financial profiles
+   - User preferences
+   - Feedback data
+
+2. **ML Training Database** (`data/risk_profiling.db`)
+   - Historical risk profiling data
+   - 107 features including demographics, financials, behavioral metrics
+   - Used exclusively for model training
+   - Table: `risk_profiling_monthly_data`
 
 ### 4.1 Users Table
 ```sql
@@ -337,35 +378,51 @@ POST   /api/risk/assess             Standalone risk assessment
 
 ### 6.1 XGBoost Risk Model
 
-**Training Data Generation**:
+**Data Pipeline**:
 ```python
-Features:
-- monthly_income: 20K - 200K range
-- savings_ratio: 0.05 - 0.50 range
-- investment_to_income_ratio: 0.05 - 0.40
-- age_factor: 0.3 - 1.0 (normalized)
-- investment_duration: 12 - 120 months
+Data Storage:
+- SQLite database: data/risk_profiling.db
+- Table: risk_profiling_monthly_data
+- 107 features including demographics, financials, behavioral metrics
+- Data loader: data_loader_to_db.ipynb
 
-Labels:
-- 0: Conservative (risk_score < 0.35)
-- 1: Moderate (0.35 <= risk_score < 0.65)
-- 2: Aggressive (risk_score >= 0.65)
+ML Pipeline (risk_profiling_ml_pipeline.ipynb):
+1. Data Loading: Query SQLite with time-based splits
+2. Preprocessing: Handle missing values, encode categoricals
+3. Feature Engineering: PII removal, correlation analysis
+4. Feature Selection: RFE, SelectFromModel, SelectKBest
+5. Model Training: XGBoost with hyperparameter tuning
+6. Evaluation: Train/Validation/Test splits
+7. MLflow Tracking: Log all experiments
+8. Model Persistence: Pickle + MLflow Model Registry
 ```
 
-**Model Configuration**:
+**Model Artifacts (models/)**:
 ```python
-XGBClassifier(
-    n_estimators=100,
-    max_depth=5,
-    learning_rate=0.1,
-    random_state=42,
-    objective='multi:softmax',
-    num_class=3
-)
+- risk_profiling_model.pkl: Trained XGBoost classifier
+- label_encoder.pkl: Target variable encoder
+- selected_features.json: 39 selected features (from 107)
+- best_params.json: Optimized hyperparameters
+- evaluation_metrics.json: Performance metrics
+- feature_importance.csv: Feature importance scores
 ```
 
-**Feature Importance**:
-Extracted using XGBoost's `feature_importances_` attribute
+**Model Performance**:
+```python
+Training Accuracy: ~99%
+Validation Accuracy: ~98%
+Test Accuracy: ~98%
+Selected Features: 39 (via univariate selection)
+ROC-AUC: ~0.99 across all datasets
+```
+
+**Feature Selection Methods Tested**:
+```python
+1. Recursive Feature Elimination (RFE)
+2. SelectFromModel (tree-based importance)
+3. SelectKBest (univariate) - BEST PERFORMER
+4. Principal Component Analysis (PCA)
+```
 
 ### 6.2 SHAP Explainability
 
@@ -385,6 +442,62 @@ feature_importance = dict(zip(
 - Bar charts showing feature impact
 - Positive values push toward higher risk
 - Negative values push toward lower risk
+
+### 6.3 MLflow Integration
+
+**Experiment Tracking**:
+```python
+Purpose: Track all ML experiments and hyperparameter tuning
+Location: mlruns/ directory
+
+Tracked Metrics:
+- Training/Validation/Test accuracy
+- Precision, Recall, F1-Score
+- ROC-AUC scores
+- Feature importance scores
+
+Tracked Parameters:
+- Feature selection method
+- Number of features
+- XGBoost hyperparameters
+- Random state
+```
+
+**Model Registry**:
+```python
+Model Name: RiskProfilingXGBoost
+Versioning: Automatic version tracking
+Signature: Input/output schema for deployment
+
+Model Tags:
+- feature_selection: Method used (e.g., "univariate")
+- test_accuracy: Final test accuracy
+- test_roc_auc: Final ROC-AUC score
+```
+
+**Artifacts Logged**:
+```python
+Per Run:
+- Trained model (XGBoost)
+- Feature importance CSV
+- Selected features JSON
+- Best parameters JSON
+- Evaluation metrics JSON
+- Label encoder pickle
+- ROC curve plots
+```
+
+**Usage**:
+```bash
+# View MLflow UI
+mlflow ui
+# Access at: http://localhost:5000
+
+# Compare experiments
+# View model versions
+# Download artifacts
+# Promote models to production
+```
 
 ---
 
