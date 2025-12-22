@@ -48,6 +48,9 @@ htmlcov/
 # Docker
 .dockerignore
 
+# GitHub workflows (CI/CD)
+.github/
+
 # Temporary files
 *.tmp
 temp/
