@@ -32,9 +32,12 @@ An intelligent, multi-agent AI system that provides personalized financial inves
 - **Frontend**: Streamlit
 - **ML**: XGBoost, Scikit-learn
 - **ML Tracking**: MLflow (experiment tracking, model registry)
-- **Explainability**: SHAP, LIME
-- **LLM**: OpenAI GPT-3.5
+- **Explainability**: SHAP, LIME, GPT-4o-mini
+- **LLM**: OpenAI GPT-4o-mini
+- **Orchestration**: LangGraph/LangChain
 - **Database**: SQLite (user data + ML training data)
+- **CI/CD**: GitHub Actions (drift detection, auto-retraining)
+- **Monitoring**: PSI/CSI drift detection
 - **Data Sources**: yfinance, RBI (simulated)
 
 ## 📁 Project Structure
@@ -46,9 +49,9 @@ financial-advisor/
 │   │   ├── data_agent.py          # Market data fetching
 │   │   ├── risk_agent.py          # XGBoost risk profiling
 │   │   ├── advisor_agent.py       # LLM recommendations
-│   │   ├── xai_agent.py           # Explainability
+│   │   ├── xai_agent.py           # Explainability (SHAP/LIME)
 │   │   ├── memory_agent.py        # User preferences
-│   │   └── orchestrator.py        # Agent coordination
+│   │   └── orchestrator.py        # Agent coordination (LangGraph)
 │   ├── models/
 │   │   ├── database.py            # SQLAlchemy models
 │   │   ├── db_manager.py          # Database connection
@@ -59,22 +62,35 @@ financial-advisor/
 │   └── main.py                    # FastAPI app
 ├── frontend/
 │   └── streamlit_app.py           # Streamlit dashboard
+├── mlops/                         # CI/CD & Model Monitoring
+│   ├── drift_detector.py          # PSI/CSI drift detection
+│   ├── model_retrainer.py         # Automated retraining
+│   ├── monitoring_scheduler.py    # Scheduled monitoring
+│   └── mlops_cli.py               # CLI tool
 ├── data/
 │   ├── financial_advisor.db       # User data & sessions
 │   └── risk_profiling.db          # ML training data
 ├── logs/                          # Application logs
 ├── models/                        # Trained ML models
-│   ├── risk_profiling_model.pkl   # XGBoost model
+│   ├── risk_model.json            # XGBoost model
+│   ├── risk_profiling_model.pkl   # Model pickle
 │   ├── label_encoder.pkl          # Target encoder
 │   ├── selected_features.json     # Feature list
 │   ├── best_params.json           # Hyperparameters
-│   └── evaluation_metrics.json    # Model metrics
+│   ├── evaluation_metrics.json    # Model metrics
+│   ├── feature_importance.csv     # Feature importance
+│   └── model_metadata.json        # Training metadata
 ├── mlruns/                        # MLflow tracking data
+├── .github/workflows/
+│   └── model-cicd.yml             # GitHub Actions CI/CD
 ├── data_loader_to_db.ipynb        # Load CSV to SQLite
 ├── risk_profiling_ml_pipeline.ipynb  # Complete ML pipeline
+├── end_to_end_ml_pipeline.py      # Standalone ML pipeline script
 ├── requirements.txt               # Python dependencies
 ├── Dockerfile                     # Docker image
 ├── docker-compose.yml             # Docker orchestration
+├── ARCHITECTURE.md                # Comprehensive documentation
+├── QUICKSTART.md                  # Quick setup guide
 ├── .env.example                   # Environment variables template
 └── README.md                      # This file
 ```
@@ -442,12 +458,24 @@ Full API documentation available at:
 
 
 
-## 📚 References
+## 📚 Documentation
+
+For comprehensive documentation, see:
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Complete system architecture, data dictionary, ML pipeline, and technical details |
+| [QUICKSTART.md](QUICKSTART.md) | Quick setup and installation guide |
+
+### External References
 
 - XGBoost: https://xgboost.readthedocs.io/
 - SHAP: https://shap.readthedocs.io/
+- LIME: https://github.com/marcotcr/lime
+- LangGraph: https://python.langchain.com/docs/langgraph
 - FastAPI: https://fastapi.tiangolo.com/
 - Streamlit: https://streamlit.io/
+- MLflow: https://mlflow.org/docs/latest/
 
 ## 🤝 Contributing
 
@@ -469,6 +497,69 @@ For issues or questions related to this dissertation project, contact the develo
 - [ ] Advanced backtesting
 - [ ] Integration with trading platforms
 - [ ] More financial instruments (commodities, bonds)
+
+---
+
+## 🔄 CI/CD Pipeline & Model Monitoring
+
+### Automated Drift Detection & Retraining
+
+The system includes a production-ready CI/CD pipeline for automated model monitoring and retraining:
+
+#### Overview
+
+- **Drift Detection**: Monthly checks using PSI (Population Stability Index) and CSI (Characteristic Stability Index)
+- **Automatic Retraining**: Triggered when PSI > 0.25 or multiple features have CSI > 0.25
+- **Model Validation**: New models must exceed performance thresholds before deployment
+- **GitHub Actions**: Automated workflow for scheduled and triggered runs
+
+#### Thresholds
+
+| Metric | Threshold | Action |
+|--------|-----------|--------|
+| PSI | > 0.25 | Triggers retraining |
+| CSI per feature | > 0.25 | Flags feature drift |
+| Accuracy | > 90% | Required for deployment |
+| ROC-AUC | > 95% | Required for deployment |
+
+#### MLOps CLI Commands
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Check drift status
+python mlops/mlops_cli.py drift-check
+
+# Force retrain model
+python mlops/mlops_cli.py retrain --force
+
+# Run full pipeline
+python mlops/mlops_cli.py pipeline
+
+# Check system status
+python mlops/mlops_cli.py status
+```
+
+#### GitHub Actions Workflow
+
+The CI/CD pipeline is defined in `.github/workflows/model-cicd.yml`:
+
+- **Schedule**: Runs on 1st of every month at 2 AM UTC
+- **Manual Trigger**: Can be run manually with optional force retrain
+- **Push Trigger**: Triggered on changes to data or mlops files
+
+#### Model Artifacts
+
+All model artifacts are stored in `models/`:
+- `risk_model.json` - XGBoost model (JSON format)
+- `risk_profiling_model.pkl` - Model pickle backup
+- `selected_features.json` - List of selected features
+- `label_encoder.pkl` - Target variable encoder
+- `best_params.json` - Optimized hyperparameters
+- `evaluation_metrics.json` - Model performance metrics
+- `model_metadata.json` - Training metadata
+- `feature_importance.csv` - Feature importance scores
 
 ---
 

@@ -227,11 +227,80 @@ Risk: Aggressive
 
 After getting it running:
 
-1. **Read README.md** for detailed documentation
+1. **Read [ARCHITECTURE.md](ARCHITECTURE.md)** for comprehensive documentation including:
+   - System architecture and agent details
+   - Complete data dictionary with 112 features grouped by category
+   - ML pipeline, feature engineering, and model performance
+   - XAI (SHAP, LIME, GPT-4o-mini) implementation
+   - Database schema and API documentation
 2. **Explore API** at http://localhost:8000/docs
 3. **Test different scenarios** in Streamlit
-4. **Check the code** to understand architecture
-5. **Customize** as needed for your dissertation
+4. **View MLflow UI** (optional):
+   ```bash
+   # In a new terminal
+   cd /Users/ashutosh/BITS/Financial-Advisor
+   source venv/bin/activate
+   mlflow ui
+   # Access at: http://localhost:5000
+   ```
+   - View ML experiments
+   - Compare model versions
+   - Check training metrics
+
+## 🧠 ML Model Training (Optional)
+
+If you want to retrain the risk profiling model:
+
+```bash
+# 1. Load data into database
+jupyter notebook data_loader_to_db.ipynb
+
+# 2. Run complete ML pipeline
+jupyter notebook risk_profiling_ml_pipeline.ipynb
+
+# Or use the Python script:
+python end_to_end_ml_pipeline.py
+```
+
+This will:
+- Create `data/risk_profiling.db` database
+- Train XGBoost model with feature selection
+- Save artifacts to `models/` directory
+- Log experiments to MLflow (`mlruns/`)
+- Achieve ~98% accuracy
+
+**Pre-trained model included**, so this is optional!
+
+---
+
+## 🔄 MLOps & CI/CD Commands
+
+The system includes automated model monitoring and retraining:
+
+### Check Model Status
+```bash
+source venv/bin/activate
+python mlops/mlops_cli.py status
+```
+
+### Run Drift Detection
+```bash
+python mlops/mlops_cli.py drift-check
+```
+
+### Force Retrain Model
+```bash
+python mlops/mlops_cli.py retrain --force
+```
+
+### Run Full Pipeline
+```bash
+python mlops/mlops_cli.py pipeline
+```
+
+### Drift Detection Thresholds
+- **PSI > 0.25**: Indicates significant population shift → triggers retraining
+- **CSI > 0.25 per feature**: Indicates feature drift
 
 ---
 

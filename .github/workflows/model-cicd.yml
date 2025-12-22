@@ -1,0 +1,384 @@
+# GitHub Actions CI/CD Workflow for Financial Advisor Model
+# 
+# This workflow handles:
+# 1. Scheduled drift detection (monthly)
+# 2. Automatic model retraining when drift is detected
+# 3. Model validation and deployment
+# 4. Manual trigger support
+
+name: Model CI/CD Pipeline
+
+on:
+  # Scheduled run - 1st of every month at 2 AM UTC
+  schedule:
+    - cron: '0 2 1 * *'
+  
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Force model retraining regardless of drift'
+        required: false
+        default: 'false'
+        type: boolean
+      baseline_snapshot:
+        description: 'Baseline snapshot date (YYYY-MM-DD)'
+        required: false
+        type: string
+      current_snapshot:
+        description: 'Current snapshot date (YYYY-MM-DD)'
+        required: false
+        type: string
+
+  # Trigger on data updates
+  push:
+    paths:
+      - 'data/risk_profiling.db'
+      - 'mlops/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+  # Stage 1: Drift Detection
+  drift-detection:
+    name: 📊 Drift Detection
+    runs-on: ubuntu-latest
+    outputs:
+      drift_detected: ${{ steps.drift-check.outputs.drift_detected }}
+      psi_score: ${{ steps.drift-check.outputs.psi_score }}
+      drifted_features: ${{ steps.drift-check.outputs.drifted_features }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Drift Detection
+        id: drift-check
+        run: |
+          python -c "
+          import json
+          import sys
+          sys.path.insert(0, '.')
+          
+          from mlops.drift_detector import DriftDetector
+          
+          detector = DriftDetector()
+          
+          baseline = '${{ github.event.inputs.baseline_snapshot }}' or None
+          current = '${{ github.event.inputs.current_snapshot }}' or None
+          
+          try:
+              report = detector.detect_drift(
+                  baseline_snapshot=baseline,
+                  current_snapshot=current
+              )
+              
+              # Save report
+              detector.save_report(report)
+              
+              # Set outputs
+              print(f'::set-output name=drift_detected::{str(report.overall_drift_detected).lower()}')
+              print(f'::set-output name=psi_score::{report.psi_score}')
+              print(f'::set-output name=drifted_features::{len(report.csi_drifted_features)}')
+              
+              # Summary
+              print('## Drift Detection Results')
+              print(f'- PSI Score: {report.psi_score:.4f}')
+              print(f'- PSI Status: {report.psi_status}')
+              print(f'- Drifted Features: {len(report.csi_drifted_features)}')
+              print(f'- Drift Detected: {report.overall_drift_detected}')
+              
+              if report.overall_drift_detected:
+                  print('::warning::Significant drift detected! Retraining recommended.')
+                  sys.exit(0)
+              else:
+                  print('::notice::No significant drift detected. Model is stable.')
+                  
+          except Exception as e:
+              print(f'::error::Drift detection failed: {e}')
+              sys.exit(1)
+          "
+      
+      - name: Upload Drift Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: logs/drift_reports/
+          retention-days: 30
+  
+  # Stage 2: Model Retraining (conditional)
+  model-retraining:
+    name: 🔧 Model Retraining
+    runs-on: ubuntu-latest
+    needs: drift-detection
+    if: needs.drift-detection.outputs.drift_detected == 'true' || github.event.inputs.force_retrain == 'true'
+    outputs:
+      model_promoted: ${{ steps.retrain.outputs.model_promoted }}
+      test_accuracy: ${{ steps.retrain.outputs.test_accuracy }}
+      test_roc_auc: ${{ steps.retrain.outputs.test_roc_auc }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Model Retraining
+        id: retrain
+        run: |
+          python -c "
+          import json
+          import sys
+          sys.path.insert(0, '.')
+          
+          from mlops.model_retrainer import ModelRetrainer
+          
+          retrainer = ModelRetrainer()
+          force = '${{ github.event.inputs.force_retrain }}' == 'true'
+          
+          try:
+              result = retrainer.retrain(force=force)
+              
+              # Set outputs
+              promoted = result.get('model_promoted', False)
+              test_metrics = result.get('metrics', {}).get('test', {})
+              
+              print(f'::set-output name=model_promoted::{str(promoted).lower()}')
+              print(f'::set-output name=test_accuracy::{test_metrics.get(\"accuracy\", 0):.4f}')
+              print(f'::set-output name=test_roc_auc::{test_metrics.get(\"roc_auc\", 0):.4f}')
+              
+              # Summary
+              print('## Model Retraining Results')
+              print(f'- Status: {result.get(\"status\")}')
+              print(f'- Model Promoted: {promoted}')
+              print(f'- Test Accuracy: {test_metrics.get(\"accuracy\", 0):.4f}')
+              print(f'- Test ROC-AUC: {test_metrics.get(\"roc_auc\", 0):.4f}')
+              
+              if promoted:
+                  print('::notice::New model promoted to production!')
+              else:
+                  print('::warning::Model not promoted - performance validation failed.')
+                  
+          except Exception as e:
+              print(f'::error::Retraining failed: {e}')
+              sys.exit(1)
+          "
+      
+      - name: Upload Model Artifacts
+        uses: actions/upload-artifact@v4
+        if: steps.retrain.outputs.model_promoted == 'true'
+        with:
+          name: model-artifacts
+          path: |
+            models/risk_model.json
+            models/risk_profiling_model.pkl
+            models/evaluation_metrics.json
+            models/model_metadata.json
+            models/feature_importance.csv
+          retention-days: 90
+      
+      - name: Upload Retraining Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: retraining-report
+          path: logs/retraining_reports/
+          retention-days: 30
+  
+  # Stage 3: Model Validation
+  model-validation:
+    name: ✅ Model Validation
+    runs-on: ubuntu-latest
+    needs: model-retraining
+    if: needs.model-retraining.outputs.model_promoted == 'true'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      
+      - name: Download Model Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: models/
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Validate Model
+        run: |
+          python -c "
+          import json
+          import xgboost as xgb
+          
+          # Load and validate model
+          model = xgb.XGBClassifier()
+          model.load_model('models/risk_model.json')
+          
+          print('Model loaded successfully')
+          print(f'Number of estimators: {model.n_estimators}')
+          
+          # Load and validate metrics
+          with open('models/evaluation_metrics.json', 'r') as f:
+              metrics = json.load(f)
+          
+          test_acc = metrics.get('test', {}).get('accuracy', 0)
+          test_auc = metrics.get('test', {}).get('roc_auc', 0)
+          
+          print(f'Test Accuracy: {test_acc:.4f}')
+          print(f'Test ROC-AUC: {test_auc:.4f}')
+          
+          # Validation thresholds
+          if test_acc < 0.90:
+              print('::error::Model accuracy below 90% threshold')
+              exit(1)
+          
+          if test_auc < 0.95:
+              print('::error::Model ROC-AUC below 95% threshold')
+              exit(1)
+          
+          print('::notice::Model validation passed!')
+          "
+  
+  # Stage 4: Deploy (commit new model)
+  deploy-model:
+    name: 🚀 Deploy Model
+    runs-on: ubuntu-latest
+    needs: [model-retraining, model-validation]
+    if: needs.model-retraining.outputs.model_promoted == 'true'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Download Model Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: model-artifacts
+          path: models/
+      
+      - name: Commit and Push New Model
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add model files
+          git add models/risk_model.json
+          git add models/risk_profiling_model.pkl
+          git add models/evaluation_metrics.json
+          git add models/model_metadata.json
+          git add models/feature_importance.csv
+          
+          # Commit with details
+          ACCURACY="${{ needs.model-retraining.outputs.test_accuracy }}"
+          ROC_AUC="${{ needs.model-retraining.outputs.test_roc_auc }}"
+          
+          git commit -m "🤖 Auto-retrained model (Accuracy: ${ACCURACY}, ROC-AUC: ${ROC_AUC})" || echo "No changes to commit"
+          git push
+      
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: model-v${{ github.run_number }}
+          release_name: Model v${{ github.run_number }} (Auto-retrained)
+          body: |
+            ## 🤖 Automated Model Retraining
+            
+            This model was automatically retrained by the CI/CD pipeline due to detected data drift.
+            
+            ### Performance Metrics
+            - **Test Accuracy**: ${{ needs.model-retraining.outputs.test_accuracy }}
+            - **Test ROC-AUC**: ${{ needs.model-retraining.outputs.test_roc_auc }}
+            
+            ### Drift Detection
+            - **PSI Score**: ${{ needs.drift-detection.outputs.psi_score }}
+            - **Drifted Features**: ${{ needs.drift-detection.outputs.drifted_features }}
+            
+            ### Artifacts
+            - `risk_model.json` - XGBoost model
+            - `evaluation_metrics.json` - Performance metrics
+            - `model_metadata.json` - Training metadata
+          draft: false
+          prerelease: false
+  
+  # Notification Job
+  notify:
+    name: 📬 Notify
+    runs-on: ubuntu-latest
+    needs: [drift-detection, model-retraining, deploy-model]
+    if: always()
+    
+    steps:
+      - name: Send Slack Notification
+        if: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          DRIFT="${{ needs.drift-detection.outputs.drift_detected }}"
+          PROMOTED="${{ needs.model-retraining.outputs.model_promoted }}"
+          
+          if [ "$DRIFT" = "true" ]; then
+            if [ "$PROMOTED" = "true" ]; then
+              MESSAGE="✅ CI/CD Pipeline Complete: New model deployed (Accuracy: ${{ needs.model-retraining.outputs.test_accuracy }})"
+            else
+              MESSAGE="⚠️ CI/CD Pipeline: Drift detected but model not promoted"
+            fi
+          else
+            MESSAGE="✅ Model Stability Check: No drift detected"
+          fi
+          
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$MESSAGE\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }} || true
+      
+      - name: Summary
+        run: |
+          echo "## 📊 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Drift Detection | ${{ needs.drift-detection.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Model Retraining | ${{ needs.model-retraining.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Model Deployment | ${{ needs.deploy-model.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- PSI Score: ${{ needs.drift-detection.outputs.psi_score }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Drift Detected: ${{ needs.drift-detection.outputs.drift_detected }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Model Promoted: ${{ needs.model-retraining.outputs.model_promoted }}" >> $GITHUB_STEP_SUMMARY
