@@ -81,10 +81,8 @@ model_metadata.json
 classification_report_*.txt
 confusion_matrix_*.csv
 
-# Generated plots and figures
-*.png
-*.jpg
-*.jpeg
-*.svg
+# Generated plots and figures (excluding images/ folder for documentation)
 figures/
 plots/
+# Allow images/ folder for architecture diagrams and documentation
+!images/**
