@@ -26,13 +26,13 @@ class RiskAgent:
     ):
         self.model_path = model_path or "./models/risk_model.json"
         self.features_path = features_path or "./models/selected_features.json"
-        self.encoder_path = encoder_path or "./models/label_encoder.pkl"
         self.feature_eng_config_path = feature_eng_config_path or "./models/feature_engineering_config.json"
         self.db_path = db_path or "./data/risk_profiling.db"
         
         self.model = None
         self.feature_names = []
-        self.label_encoder = None
+        # Target classes for risk profile (0: Aggressive, 1: Conservative)
+        self.target_classes = ['Aggressive', 'Conservative']
         self.feature_engineering_config = None
         self._initialize_model()
     
@@ -56,15 +56,6 @@ class RiskAgent:
             else:
                 logger.error(f"Features file not found: {self.features_path}")
                 raise FileNotFoundError(f"Features file not found: {self.features_path}")
-            
-            # Load target label encoder
-            if os.path.exists(self.encoder_path):
-                with open(self.encoder_path, 'rb') as f:
-                    self.label_encoder = pickle.load(f)
-                logger.info(f"Loaded target label encoder with classes: {self.label_encoder.classes_}")
-            else:
-                logger.error(f"Target label encoder not found: {self.encoder_path}")
-                raise FileNotFoundError(f"Target label encoder not found: {self.encoder_path}")
             
             # Load feature engineering configuration (includes all transformations and encoding)
             if os.path.exists(self.feature_eng_config_path):
@@ -240,13 +231,13 @@ class RiskAgent:
             prediction = self.model.predict(features_df)[0]
             probabilities = self.model.predict_proba(features_df)[0]
             
-            # Decode prediction
-            risk_category = self.label_encoder.inverse_transform([prediction])[0]
+            # Decode prediction (0: Aggressive, 1: Conservative)
+            risk_category = self.target_classes[int(prediction)]
             
             # Create probability dictionary
             risk_probabilities = {
-                str(self.label_encoder.classes_[i]): float(probabilities[i])
-                for i in range(len(self.label_encoder.classes_))
+                self.target_classes[i]: float(probabilities[i])
+                for i in range(len(self.target_classes))
             }
             
             # Get customer info for response

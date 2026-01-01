@@ -74,7 +74,7 @@ financial-advisor/
 ├── models/                        # Trained ML models
 │   ├── risk_model.json            # XGBoost model
 │   ├── risk_profiling_model.pkl   # Model pickle
-│   ├── label_encoder.pkl          # Target encoder
+
 │   ├── selected_features.json     # Feature list
 │   ├── best_params.json           # Hyperparameters
 │   ├── evaluation_metrics.json    # Model metrics
@@ -130,7 +130,7 @@ The risk profiling system uses XGBoost trained on historical financial data:
 #### Model Files
 
 - `risk_profiling_model.pkl`: Trained XGBoost classifier
-- `label_encoder.pkl`: Target variable encoder
+
 - `selected_features.json`: List of features used
 - `best_params.json`: Optimized hyperparameters
 - `evaluation_metrics.json`: Performance metrics
@@ -555,7 +555,7 @@ All model artifacts are stored in `models/`:
 - `risk_model.json` - XGBoost model (JSON format)
 - `risk_profiling_model.pkl` - Model pickle backup
 - `selected_features.json` - List of selected features
-- `label_encoder.pkl` - Target variable encoder
+- `feature_engineering_config.json` - Feature engineering transformations & encodings
 - `best_params.json` - Optimized hyperparameters
 - `evaluation_metrics.json` - Model performance metrics
 - `model_metadata.json` - Training metadata

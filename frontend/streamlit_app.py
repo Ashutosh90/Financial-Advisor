@@ -60,13 +60,26 @@ st.markdown("""
 
 
 def check_api_health():
-    """Check if API is running"""
-    try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=5)
-        return response.status_code == 200
-    except Exception as e:
-        st.error(f"🔍 Debug: Cannot connect to backend - {str(e)}")
-        return False
+    """Check if API is running with retry logic"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(f"{API_BASE_URL}/health", timeout=15)
+            return response.status_code == 200
+        except requests.exceptions.Timeout:
+            if attempt < max_retries - 1:
+                continue  # Retry
+            st.warning("⏳ Backend is slow to respond. It might be processing other requests.")
+            return False
+        except requests.exceptions.ConnectionError:
+            st.error("🔌 Cannot connect to backend - server might not be running")
+            return False
+        except Exception as e:
+            if attempt < max_retries - 1:
+                continue
+            st.error(f"🔍 Debug: Backend connection issue - {str(e)}")
+            return False
+    return False
 
 
 def get_user_by_id(user_id):
@@ -150,15 +163,23 @@ def create_user(name, email, age, occupation):
         return None
 
 
-def get_customer_investment_advice(customer_id, query="Provide investment recommendations based on my risk profile"):
+def get_customer_investment_advice(customer_id, query="Provide investment recommendations based on my risk profile", session_id=None):
     """Get investment advice using customer_id from risk profiling database"""
     try:
+        params = {"query": query}
+        if session_id:
+            params["session_id"] = session_id
+            
         response = requests.post(
             f"{API_BASE_URL}/api/advisory/customer/{customer_id}",
-            params={"query": query}
+            params=params,
+            timeout=120  # 2 minute timeout for AI processing
         )
         if response.status_code == 200:
             return response.json()
+        return None
+    except requests.exceptions.Timeout:
+        st.error("⏱️ Request timed out. The AI is taking longer than expected. Please try again.")
         return None
     except Exception as e:
         st.error(f"Error getting advice: {e}")
@@ -283,8 +304,6 @@ def main():
             st.rerun()
         return
     
-    st.success("✅ Connected to backend API")
-    
     # Sidebar - Customer Information (SINGLE INSTANCE)
     with st.sidebar:
         st.header("👤 Customer Lookup")
@@ -299,7 +318,6 @@ def main():
         
         if st.session_state.customer_id is None:
             st.subheader("Enter Customer ID")
-            st.info("💡 Customer IDs start from 100000")
             
             # Text input for customer ID with autocomplete
             customer_id_input = st.text_input(
@@ -340,7 +358,6 @@ def main():
                         # Clear any previous results
                         if 'last_result' in st.session_state:
                             del st.session_state.last_result
-                        st.success(f"✅ Customer {customer_id} loaded successfully!")
                         st.rerun()
                     else:
                         st.error(f"❌ Customer ID {customer_id} not found in database.")
@@ -357,8 +374,8 @@ def main():
                 st.markdown(f"""
                 <div style="background-color: #1e3a5f; padding: 15px; border-radius: 8px; margin: 10px 0;">
                     <p style="margin: 5px 0; font-size: 14px;"><b>👤 Age:</b> {data.get('age', 'N/A')}</p>
-                    <p style="margin: 5px 0; font-size: 14px;"><b>💰 Annual Income:</b> ${data.get('annual_income', 0):,.0f}</p>
-                    <p style="margin: 5px 0; font-size: 14px;"><b>💎 Net Worth:</b> ${data.get('net_worth', 0):,.0f}</p>
+                    <p style="margin: 5px 0; font-size: 14px;"><b>💰 Annual Income:</b> ₹{data.get('annual_income', 0):,.0f}</p>
+                    <p style="margin: 5px 0; font-size: 14px;"><b>💎 Net Worth:</b> ₹{data.get('net_worth', 0):,.0f}</p>
                     <p style="margin: 5px 0; font-size: 14px;"><b>📊 Risk Profile:</b> {data.get('risk_profile', 'Unknown')}</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -371,6 +388,10 @@ def main():
                 st.session_state.search_results = []
                 if 'last_result' in st.session_state:
                     del st.session_state.last_result
+                if 'chat_history' in st.session_state:
+                    st.session_state.chat_history = []
+                if 'current_session_id' in st.session_state:
+                    del st.session_state.current_session_id
                 st.rerun()
         
         st.markdown("---")
@@ -380,15 +401,6 @@ def main():
     # Main content area
     if st.session_state.customer_id is None:
         st.info("👈 Please enter a Customer ID to get started")
-        st.markdown("""
-        ### 💡 Quick Start Guide
-        
-        1. Enter your Customer ID in the sidebar (e.g., 100000)
-        2. Click **Load Customer Data**
-        3. Get instant AI-powered investment recommendations!
-        
-        Your financial data will be automatically loaded from the database.
-        """)
         return
     
     # Create tabs with full functionality
@@ -499,6 +511,8 @@ def main():
                     st.session_state.chat_history = []
                     if 'last_result' in st.session_state:
                         del st.session_state['last_result']
+                    if 'current_session_id' in st.session_state:
+                        del st.session_state['current_session_id']
                     st.rerun()
             
             if send_button and user_message:
@@ -508,11 +522,22 @@ def main():
                     'content': user_message
                 })
                 
+                # Get session_id from previous interactions (for conversation continuity)
+                session_id = st.session_state.get('current_session_id', None)
+                
                 # Get AI response
                 with st.spinner("🤖 AI is thinking..."):
-                    result = get_customer_investment_advice(st.session_state.customer_id, user_message)
+                    result = get_customer_investment_advice(
+                        st.session_state.customer_id, 
+                        user_message,
+                        session_id=session_id
+                    )
                     
                     if result and result.get('recommendation'):
+                        # Store session_id for future requests (conversation continuity)
+                        if result.get('session_id'):
+                            st.session_state.current_session_id = result['session_id']
+                        
                         recommendation = result['recommendation']
                         # Get the reasoning/recommendation text
                         ai_response = recommendation.get('reasoning', recommendation.get('recommendation', 'I apologize, I could not generate a recommendation.'))
@@ -665,23 +690,30 @@ def main():
                         age,
                         help="Your current age"
                     )
-                
-                # Risk probabilities chart
-                if 'risk_probabilities' in risk_data:
-                    fig_risk = plot_risk_profile(risk_data['risk_probabilities'])
-                    st.plotly_chart(fig_risk, use_container_width=True)
             
-            # Display Recommendation
+            # Display Recommendation - only show when AI provides actual recommendations (not questions)
             if 'recommendation' in result and result['recommendation']:
-                st.subheader("💡 Investment Recommendations")
                 rec_data = result['recommendation']
                 
                 # Check if it's a question (AI asking for more info)
-                if rec_data.get('is_question', False):
-                    # Display the question/message from AI
-                    message = rec_data.get('message') or rec_data.get('reasoning', '')
-                    st.info(f"🤖 **AI Advisor:** {message}")
+                # Also check if reasoning contains question indicators
+                is_question = rec_data.get('is_question', False)
+                reasoning_text = rec_data.get('reasoning') or rec_data.get('recommendation', '')
+                
+                # Additional check: if reasoning contains question patterns, treat as question
+                if not is_question and reasoning_text:
+                    question_indicators = ['how much', 'how long', 'what is your', 'could you', 'please provide', 'need a few more details', 'need more details']
+                    if any(indicator in reasoning_text.lower() for indicator in question_indicators):
+                        is_question = True
+                
+                # Only show Investment Recommendations section if NOT a question
+                if is_question:
+                    # Don't show anything here - the question is already displayed in chat history
+                    pass
                 else:
+                    # Show the Investment Recommendations section header
+                    st.subheader("💡 Investment Recommendations")
+                    
                     # Main recommendation text (check both 'reasoning' and 'recommendation' keys)
                     reasoning_text = rec_data.get('reasoning') or rec_data.get('recommendation', '')
                     if reasoning_text:

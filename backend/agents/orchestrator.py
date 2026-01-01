@@ -346,6 +346,61 @@ class Orchestrator:
         
         return response
     
+    def _accumulate_investment_details_from_conversation(
+        self, 
+        current_query: str, 
+        session_id: str
+    ) -> Dict:
+        """
+        Parse investment details from the ENTIRE conversation history.
+        This ensures we remember information provided in earlier messages.
+        
+        The latest value for each field takes precedence (user can override earlier values).
+        """
+        accumulated = {
+            "investment_amount": None,
+            "duration_months": None,
+            "financial_goal": None
+        }
+        
+        # Get conversation history
+        try:
+            full_history = self.session_memory.get_full_history(session_id)
+            
+            # Parse each user message in the conversation (oldest to newest)
+            # This way, later messages override earlier ones
+            for msg in full_history:
+                if msg.get("role") == "user":
+                    parsed = self._parse_investment_details_from_query(msg.get("content", ""))
+                    
+                    # Update accumulated values if new values found
+                    if parsed.get("investment_amount"):
+                        accumulated["investment_amount"] = parsed["investment_amount"]
+                    if parsed.get("duration_months"):
+                        accumulated["duration_months"] = parsed["duration_months"]
+                    if parsed.get("financial_goal"):
+                        accumulated["financial_goal"] = parsed["financial_goal"]
+            
+            logger.debug(f"After parsing history: {accumulated}")
+            
+        except Exception as e:
+            logger.warning(f"Error parsing conversation history: {e}")
+        
+        # Finally, parse the current query (takes highest precedence)
+        current_parsed = self._parse_investment_details_from_query(current_query)
+        
+        if current_parsed.get("investment_amount"):
+            accumulated["investment_amount"] = current_parsed["investment_amount"]
+        if current_parsed.get("duration_months"):
+            accumulated["duration_months"] = current_parsed["duration_months"]
+        if current_parsed.get("financial_goal"):
+            accumulated["financial_goal"] = current_parsed["financial_goal"]
+        
+        logger.info(f"Final accumulated details: Amount={accumulated['investment_amount']}, "
+                   f"Duration={accumulated['duration_months']}, Goal={accumulated['financial_goal']}")
+        
+        return accumulated
+    
     def _parse_investment_details_from_query(self, query: str) -> Dict:
         """
         Parse investment amount, duration, and goal from user's natural language query
@@ -362,87 +417,95 @@ class Orchestrator:
         query_lower = query.lower()
         
         # Parse investment amount
-        # Match patterns like: "₹8 lakhs", "8 lakh", "8,00,000", "800000", "Rs 8 lakh"
+        # Order: more specific patterns first, then generic number patterns
         amount_patterns = [
-            r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(?:lakhs?|lacs?|l)\b',  # ₹8 lakhs, Rs 8 lakh
-            r'([\d,]+(?:\.\d+)?)\s*(?:lakhs?|lacs?|l)\b',  # 8 lakhs, 8 lakh
-            r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(?:crores?|cr)\b',  # ₹1 crore
-            r'([\d,]+(?:\.\d+)?)\s*(?:crores?|cr)\b',  # 1 crore
-            r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(?:thousands?|k)\b',  # ₹50 thousand
-            r'([\d,]+(?:\.\d+)?)\s*(?:thousands?|k)\b',  # 50 thousand
-            r'(?:₹|rs\.?|inr)\s*([\d,]+)\b',  # ₹800000
-            r'invest\s+(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)',  # invest 500000
+            # With currency symbol AND unit
+            (r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(?:crores?|cr)\b', 10000000),  # ₹1 crore
+            (r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(?:lakhs?|lacs?|l)\b', 100000),  # ₹8 lakhs
+            (r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(?:thousands?|k)\b', 1000),  # ₹50 thousand
+            # Without currency symbol but WITH unit
+            (r'([\d,]+(?:\.\d+)?)\s*(?:crores?|cr)\b', 10000000),  # 1 crore
+            (r'([\d,]+(?:\.\d+)?)\s*(?:lakhs?|lacs?|l)\b', 100000),  # 8 lakhs
+            (r'([\d,]+(?:\.\d+)?)\s*(?:thousands?|k)\b', 1000),  # 50 thousand, 50k
+            # With currency symbol only (raw number)
+            (r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\b', 1),  # ₹800000
+            # Plain number patterns - capture amounts 1000 and above
+            (r'\b(\d{4,})(?:\.\d+)?\b', 1),  # 4+ digit number like 8000, 50000, 100000
         ]
         
-        for pattern in amount_patterns:
+        for pattern, multiplier in amount_patterns:
             match = re.search(pattern, query_lower)
             if match:
                 amount_str = match.group(1).replace(',', '')
                 try:
-                    amount = float(amount_str)
-                    # Convert to actual value based on unit
-                    if 'lakh' in query_lower or 'lac' in query_lower:
-                        amount *= 100000
-                    elif 'crore' in query_lower or 'cr' in query_lower:
-                        amount *= 10000000
-                    elif 'thousand' in query_lower or 'k' in query_lower.split():
-                        amount *= 1000
-                    result["investment_amount"] = amount
-                    break
+                    amount = float(amount_str) * multiplier
+                    # Sanity check: investment amount should be at least 1000
+                    if amount >= 1000:
+                        result["investment_amount"] = amount
+                        logger.debug(f"Parsed amount: {amount} (pattern: {pattern}, multiplier: {multiplier})")
+                        break
                 except ValueError:
                     continue
         
         # Parse duration
         # Match patterns like: "4 years", "5 year", "3-5 years", "18 months", "2 yrs"
+        # Order matters - more specific patterns first
         duration_patterns = [
-            r'(\d+)\s*(?:years?|yrs?)\b',  # 4 years, 5 year, 2 yrs
-            r'(\d+)\s*(?:months?|mo)\b',   # 18 months
-            r'for\s+(\d+)\s*(?:years?|yrs?)',  # for 4 years
-            r'in\s+(\d+)\s*(?:years?|yrs?)',   # in 4 years
-            r'(\d+)-(\d+)\s*(?:years?|yrs?)',  # 3-5 years (use average)
+            (r'(\d+)-(\d+)\s*(?:years?|yrs?)\b', 'years_range'),  # 3-5 years (use average)
+            (r'for\s+(\d+)\s*(?:years?|yrs?)\b', 'years'),  # for 4 years
+            (r'in\s+(\d+)\s*(?:years?|yrs?)\b', 'years'),   # in 4 years
+            (r'(\d+)\s*(?:years?|yrs?)\b', 'years'),  # 4 years, 5 year, 2 yrs
+            (r'for\s+(\d+)\s*(?:months?|mos?)\b', 'months'),  # for 6 months
+            (r'in\s+(\d+)\s*(?:months?|mos?)\b', 'months'),   # in 6 months
+            (r'(\d+)\s*(?:months?|mos?)\b', 'months'),   # 18 months
         ]
         
-        for pattern in duration_patterns:
+        for pattern, unit_type in duration_patterns:
             match = re.search(pattern, query_lower)
             if match:
                 try:
-                    if len(match.groups()) == 2:  # Range like 3-5 years
+                    if unit_type == 'years_range':  # Range like 3-5 years
                         years = (int(match.group(1)) + int(match.group(2))) / 2
-                    else:
+                        result["duration_months"] = int(years * 12)
+                    elif unit_type == 'years':
                         years = int(match.group(1))
-                    
-                    # Check if it's months or years
-                    if 'month' in query_lower or 'mo' in query_lower:
-                        result["duration_months"] = int(years)  # Already in months
-                    else:
                         result["duration_months"] = int(years * 12)  # Convert years to months
+                    else:  # months
+                        result["duration_months"] = int(match.group(1))  # Already in months
+                    logger.debug(f"Parsed duration: {result['duration_months']} months (pattern: {pattern})")
                     break
                 except ValueError:
                     continue
         
-        # Parse financial goal
+        # Parse financial goal - expanded keywords
         goal_keywords = {
             "education": ["education", "college", "university", "school", "daughter's education", 
-                         "son's education", "child's education", "higher studies"],
-            "retirement": ["retirement", "retire", "pension", "old age"],
-            "home": ["home", "house", "property", "real estate", "flat", "apartment"],
-            "wedding": ["wedding", "marriage", "shaadi"],
-            "car": ["car", "vehicle", "automobile"],
-            "wealth": ["wealth", "grow", "growth", "accumulation", "corpus", "build wealth"],
-            "emergency": ["emergency", "rainy day", "contingency"],
-            "travel": ["travel", "vacation", "holiday", "trip"],
-            "business": ["business", "startup", "entrepreneurship"],
+                         "son's education", "child's education", "higher studies", "study", "studies",
+                         "tuition", "course", "degree"],
+            "retirement": ["retirement", "retire", "pension", "old age", "golden years"],
+            "home": ["home", "house", "property", "real estate", "flat", "apartment", "housing"],
+            "wedding": ["wedding", "marriage", "shaadi", "engagement"],
+            "car": ["car", "vehicle", "automobile", "bike", "motorcycle", "two wheeler"],
+            "wealth": ["wealth", "grow", "growth", "accumulation", "corpus", "build wealth", 
+                      "savings", "save", "investment", "invest", "portfolio"],
+            "emergency": ["emergency", "rainy day", "contingency", "safety net"],
+            "travel": ["travel", "vacation", "holiday", "trip", "tour"],
+            "business": ["business", "startup", "entrepreneurship", "venture", "shop"],
+            "gadget": ["mobile", "phone", "laptop", "computer", "gadget", "electronics", 
+                      "iphone", "smartphone", "tablet", "ipad", "macbook"],
+            "medical": ["medical", "health", "hospital", "treatment", "surgery", "healthcare"],
         }
         
         for goal, keywords in goal_keywords.items():
             for keyword in keywords:
                 if keyword in query_lower:
                     result["financial_goal"] = goal.title()
+                    logger.debug(f"Parsed goal: {result['financial_goal']} (keyword: {keyword})")
                     break
             if result["financial_goal"]:
                 break
         
-        logger.debug(f"Parsed from query: {result}")
+        logger.info(f"Parsed from query '{query}': Amount={result['investment_amount']}, Duration={result['duration_months']} months, Goal={result['financial_goal']}")
         return result
 
     def process_customer_query(
@@ -478,16 +541,19 @@ class Orchestrator:
         conversation_context = self.session_memory.get_conversation_context(current_session_id)
         logger.debug(f"Session {current_session_id}: {conversation_context.get('message_count', 0)} messages in history")
         
-        # Parse investment details from the user's natural language query
-        parsed_details = self._parse_investment_details_from_query(query)
+        # Parse investment details from the ENTIRE conversation history, not just current query
+        # This ensures we accumulate information across multiple messages
+        accumulated_details = self._accumulate_investment_details_from_conversation(
+            current_query=query,
+            session_id=current_session_id
+        )
         
-        # Use parsed values if available, otherwise indicate "not specified"
-        # DO NOT use database values as they represent existing investments, not new requests
-        investment_amount = parsed_details.get("investment_amount") or 0
-        duration_months = parsed_details.get("duration_months") or 0
-        financial_goal = parsed_details.get("financial_goal") or "Not Specified"
+        # Use accumulated values if available
+        investment_amount = accumulated_details.get("investment_amount") or 0
+        duration_months = accumulated_details.get("duration_months") or 0
+        financial_goal = accumulated_details.get("financial_goal") or "Not Specified"
         
-        logger.info(f"Parsed from query - Amount: {investment_amount}, Duration: {duration_months} months, Goal: {financial_goal}")
+        logger.info(f"Accumulated from conversation - Amount: {investment_amount}, Duration: {duration_months} months, Goal: {financial_goal}")
         
         # Get ML-based risk prediction
         risk_profile = self.risk_agent.predict_risk_profile(customer_id)

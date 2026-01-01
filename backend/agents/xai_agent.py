@@ -203,7 +203,7 @@ class XAIAgent:
                 self._initialize_lime_explainer(
                     training_data=features_df,
                     feature_names=self.risk_agent.feature_names,
-                    class_names=list(self.risk_agent.label_encoder.classes_)
+                    class_names=self.risk_agent.target_classes
                 )
             
             if self.lime_explainer is None:
@@ -224,7 +224,7 @@ class XAIAgent:
             
             # Get predicted class
             prediction = self.risk_agent.model.predict(features_df)[0]
-            predicted_class = self.risk_agent.label_encoder.inverse_transform([prediction])[0]
+            predicted_class = self.risk_agent.target_classes[int(prediction)]
             
             # Extract feature weights for predicted class
             feature_weights = explanation.as_list(label=prediction)

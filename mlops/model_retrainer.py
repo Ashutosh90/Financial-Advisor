@@ -262,12 +262,10 @@ class ModelRetrainer:
         # Extract target variable if present
         labels = None
         if 'risk_profile' in df.columns:
-            if self.label_encoder:
-                labels = self.label_encoder.transform(df['risk_profile'])
-            else:
-                # Create new label encoder
-                self.label_encoder = LabelEncoder()
-                labels = self.label_encoder.fit_transform(df['risk_profile'])
+            # Encode target variable (Aggressive=0, Conservative=1)
+            label_encoder = LabelEncoder()
+            label_encoder.classes_ = np.array(self.target_classes)
+            labels = label_encoder.transform(df['risk_profile'])
         
         # Select only the required features
         if self.selected_features:

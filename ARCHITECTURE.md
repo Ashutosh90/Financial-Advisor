@@ -855,7 +855,7 @@ years_of_market_experience, ... (+ derived features)
 | `risk_model.json` | `models/` | XGBoost model (JSON format) |
 | `risk_profiling_model.pkl` | `models/` | Complete model (Pickle) |
 | `selected_features.json` | `models/` | List of 39 selected features |
-| `label_encoder.pkl` | `models/` | Target variable encoder |
+
 | `categorical_encoders.pkl` | `models/` | Categorical feature encoders |
 | `best_params.json` | `models/` | Optimized hyperparameters |
 | `evaluation_metrics.json` | `models/` | All performance metrics |
