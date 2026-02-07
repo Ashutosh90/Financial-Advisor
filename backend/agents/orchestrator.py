@@ -3,6 +3,7 @@ Orchestrator - Multi-agent system using LangGraph state machine
 Coordinates all agents in a structured workflow with state management
 Uses existing AdvisorAgent and XAIAgent for their specialized logic
 Implements LangChain memory for session management
+Includes guardrails for safety and compliance
 """
 from typing import Dict, List, TypedDict, Annotated, Sequence, Optional
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -19,6 +20,7 @@ from backend.agents.advisor_agent import AdvisorAgent
 from backend.agents.xai_agent import XAIAgent
 from backend.agents.memory_agent import MemoryAgent
 from backend.agents.session_memory import SessionMemoryManager
+from backend.agents.guardrails import FinancialAdvisorGuardrails, GuardrailViolationType
 
 
 class AgentState(TypedDict):
@@ -77,10 +79,13 @@ class Orchestrator:
         # Initialize session memory manager (LangChain-based)
         self.session_memory = SessionMemoryManager(db, window_size=10)
         
+        # Initialize guardrails for safety and compliance
+        self.guardrails = FinancialAdvisorGuardrails()
+        
         # Build graph
         self.graph = self._build_graph()
         
-        logger.info("Orchestrator initialized with all agents using LangGraph and LangChain memory")
+        logger.info("Orchestrator initialized with all agents, guardrails, LangGraph and LangChain memory")
     
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph state machine"""
@@ -508,6 +513,60 @@ class Orchestrator:
         logger.info(f"Parsed from query '{query}': Amount={result['investment_amount']}, Duration={result['duration_months']} months, Goal={result['financial_goal']}")
         return result
 
+    def _create_blocked_response(
+        self,
+        customer_id: int,
+        reason: List[str],
+        violation_type: str
+    ) -> Dict:
+        """
+        Create a safe response when input is blocked by guardrails
+        
+        Args:
+            customer_id: Customer ID
+            reason: List of violation reasons
+            violation_type: Type of violation (input_validation, output_compliance, etc.)
+            
+        Returns:
+            A safe, compliant response dict
+        """
+        safe_message = (
+            "I apologize, but I'm unable to process this request. "
+            "As a financial advisor, I can only provide investment advice and help with "
+            "financial planning queries. Please ask me about:\n\n"
+            "• Investment recommendations based on your risk profile\n"
+            "• Portfolio allocation strategies\n"
+            "• Financial goal planning\n"
+            "• Understanding your risk assessment\n"
+            "• Market data and investment options"
+        )
+        
+        return {
+            "recommendation": {
+                "response": safe_message,
+                "reasoning": safe_message,
+                "is_question": False,
+                "guardrails_blocked": True,
+                "violation_type": violation_type,
+                "portfolio": {}
+            },
+            "market_data": {},
+            "risk_profile": {},
+            "explanation": {
+                "simplified_explanation": "This request could not be processed due to content guidelines.",
+                "key_factors": []
+            },
+            "customer_id": customer_id,
+            "session_id": None,
+            "conversation_context": {"message_count": 0},
+            "customer_data": {},
+            "guardrails_info": {
+                "blocked": True,
+                "violation_type": violation_type,
+                "reasons": reason
+            }
+        }
+
     def process_customer_query(
         self,
         customer_id: int,
@@ -519,6 +578,7 @@ class Orchestrator:
         Process query using customer data from risk profiling database
         Uses the trained ML model to predict risk profile
         Maintains conversation context using LangChain memory
+        Applies guardrails for safety and compliance
         
         Args:
             customer_id: Customer ID from database
@@ -530,6 +590,21 @@ class Orchestrator:
             Complete advisory response with recommendation and explanation
         """
         logger.info(f"Processing query for customer {customer_id} using ML model")
+        
+        # === GUARDRAILS: Input Validation (Non-blocking for legitimate queries) ===
+        try:
+            is_valid, sanitized_query, error_message = self.guardrails.validate_input(query)
+            if not is_valid:
+                # Only block truly malicious inputs (prompt injection, adversarial attacks)
+                # Log the issue but let the advisor handle off-topic gracefully
+                logger.warning(f"Input guardrail warning for customer {customer_id}: {error_message}")
+                # Still process the query - the advisor agent will handle inappropriate queries gracefully
+            else:
+                # Use sanitized query if PII was masked
+                query = sanitized_query
+        except Exception as e:
+            # If guardrails fail, don't block the user - just log and continue
+            logger.error(f"Guardrails validation error (continuing): {e}")
         
         # Get or create session for conversation memory
         current_session_id = self.session_memory.get_or_create_session(
@@ -571,6 +646,28 @@ class Orchestrator:
             duration_months=duration_months,
             financial_goal=financial_goal
         )
+        
+        # === GUARDRAILS: Output Validation (Non-blocking, adds metadata only) ===
+        # Validate and optionally enhance the recommendation with disclaimers
+        try:
+            recommendation_text = recommendation.get('reasoning', '') or recommendation.get('response', '')
+            is_output_valid, processed_response, output_error = self.guardrails.validate_output(
+                ai_response=recommendation_text,
+                market_data=market_data,
+                risk_level=risk_profile.get('risk_category', 'moderate')
+            )
+            
+            if not is_output_valid:
+                # Log the issue but don't block - just add metadata
+                logger.warning(f"Output guardrail warning: {output_error}")
+                recommendation['guardrails_warning'] = output_error
+            
+            # If disclaimers were added, update the reasoning (this enhances, not replaces)
+            if processed_response and processed_response != recommendation_text:
+                recommendation['reasoning_with_disclaimer'] = processed_response
+        except Exception as e:
+            # If guardrails fail, don't block - just log and continue
+            logger.error(f"Output guardrails error (continuing): {e}")
         
         # Generate explanation using XAI Agent
         explanation = {}

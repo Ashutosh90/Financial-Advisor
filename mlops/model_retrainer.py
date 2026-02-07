@@ -471,12 +471,6 @@ class ModelRetrainer:
         model.save_model(str(model_path))
         saved_paths['model'] = str(model_path)
         
-        # Save as pickle too
-        pickle_path = self.model_dir / "risk_profiling_model.pkl"
-        with open(pickle_path, 'wb') as f:
-            pickle.dump(model, f)
-        saved_paths['model_pkl'] = str(pickle_path)
-        
         # Save evaluation metrics
         metrics_path = self._save_json({
             'train': metrics.get('train', {}),
