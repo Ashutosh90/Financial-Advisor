@@ -27,7 +27,7 @@ The **Financial Advisory Multi-Agent System** is an AI-powered investment recomm
 
 - **Multi-Agent Architecture**: Specialized agents for different tasks (Risk Assessment, Data Collection, Advisory, Explainability)
 - **ML-Based Risk Profiling**: XGBoost classifier with 97.88% accuracy for predicting Conservative/Aggressive risk profiles
-- **Explainable AI (XAI)**: SHAP and LIME for transparent model explanations, simplified by GPT-4o-mini
+- **Explainable AI (XAI)**: SHAP and LIME for transparent model explanations, simplified by GPT-5.2
 - **LangGraph Orchestration**: State-machine based workflow coordination
 - **LangChain Memory**: Short-term (session) and long-term (SQL) memory persistence
 - **Real-time Market Data**: Live FD rates, mutual fund returns, gold prices, and NIFTY data
@@ -146,7 +146,7 @@ The system employs a **specialized multi-agent architecture** where each agent h
 
 ### 3. 💡 Advisor Agent (`advisor_agent.py`)
 
-**Purpose**: Generates personalized investment recommendations using GPT-4o-mini.
+**Purpose**: Generates personalized investment recommendations using GPT-5.2.
 
 **Key Features**:
 - Contextual prompt engineering with customer profile
@@ -182,7 +182,7 @@ The system employs a **specialized multi-agent architecture** where each agent h
 |--------|------|-------------|
 | SHAP (TreeExplainer) | Global & Local | Shapley values for feature attribution |
 | LIME | Local | Instance-level decision rules |
-| GPT-4o-mini | Simplification | User-friendly natural language explanations |
+| GPT-5.2 | Simplification | User-friendly natural language explanations |
 
 **Output Includes**:
 - Feature contributions (sorted by impact)
@@ -210,6 +210,48 @@ The system employs a **specialized multi-agent architecture** where each agent h
 |------|----------------|-------------|
 | Short-term | `ConversationBufferWindowMemory` | In-memory (10 messages) |
 | Long-term | `SQLChatMessageHistory` | SQLite database |
+
+### 7. 🛡️ Guardrails Module (`guardrails.py`)
+
+**Purpose**: Safety and compliance layer for financial advisory system. Protects against adversarial inputs, ensures compliant outputs, detects hallucinations, and protects PII.
+
+**Guardrail Types**:
+
+| Guardrail | Description | Protection |
+|-----------|-------------|------------|
+| Input Validation | Detects adversarial prompts, prompt injections, jailbreak attempts | Blocks malicious inputs |
+| Output Filtering | Ensures financial advice is compliant with SEBI regulations | Adds disclaimers, filters non-compliant content |
+| Hallucination Detection | Verifies factual accuracy of AI responses | Flags unrealistic returns, unverifiable claims |
+| PII Protection | Detects and masks sensitive personal information | Masks SSN, PAN, Aadhaar, account numbers, etc. |
+
+**Input Validation Patterns**:
+- Prompt injection attempts ("ignore instructions", "forget your rules")
+- Jailbreak attempts ("pretend you are", "act as")
+- System prompt extraction attempts
+- Off-topic queries (non-financial)
+
+**PII Detection Categories**:
+- Indian PAN Card: `[A-Z]{5}[0-9]{4}[A-Z]`
+- Aadhaar Number: `[0-9]{4} [0-9]{4} [0-9]{4}`
+- Bank Account Numbers: 9-18 digit patterns
+- Phone Numbers: Indian format detection
+- Email Addresses: Standard email patterns
+
+**Output Compliance Checks**:
+- No guaranteed return promises
+- Required risk disclaimers
+- No specific stock tips without proper disclosure
+- SEBI regulation compliance
+
+**Integration**:
+```python
+# In Orchestrator.__init__
+self.guardrails = FinancialAdvisorGuardrails()
+
+# In process_customer_query
+is_valid, sanitized_query, error = self.guardrails.validate_input(query)
+is_output_valid, processed_response, error = self.guardrails.validate_output(response)
+```
 
 ---
 
@@ -853,7 +895,6 @@ years_of_market_experience, ... (+ derived features)
 | Artifact | Path | Description |
 |----------|------|-------------|
 | `risk_model.json` | `models/` | XGBoost model (JSON format) |
-| `risk_profiling_model.pkl` | `models/` | Complete model (Pickle) |
 | `selected_features.json` | `models/` | List of 39 selected features |
 
 | `categorical_encoders.pkl` | `models/` | Categorical feature encoders |
@@ -927,10 +968,10 @@ years_of_market_experience, ... (+ derived features)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                 GPT-4o-mini Simplification                   │
+│                 GPT-5.2 Simplification                    │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Technical Explanation ───► GPT-4o-mini ───► User-Friendly │
+│   Technical Explanation ───► GPT-5.2 ───► User-Friendly  │
 │                                                              │
 │   Input:                                                     │
 │   • SHAP top factors                                         │
@@ -973,7 +1014,7 @@ Customer ID
               │  └─────────────────────┘    │
               │                             │
               │  ┌─────────────────────┐    │
-              │  │ GPT-4o-mini         │────┼──► Simplified Explanation
+              │  │ GPT-5.2          │────┼──► Simplified Explanation
               │  └─────────────────────┘    │
               └─────────────────────────────┘
                             │
@@ -1542,12 +1583,12 @@ User Query (Frontend)
      │           │
      │           ▼
      │    ┌─────────────┐
-     │    │  XAI Agent  │ ◄───── SHAP + LIME + GPT-4o-mini
+     │    │  XAI Agent  │ ◄───── SHAP + LIME + GPT-5.2
      │    └──────┬──────┘
      │           │
      ▼           ▼
 ┌──────────────────────┐
-│    Advisor Agent     │ ◄───── GPT-4o-mini
+│    Advisor Agent     │ ◄───── GPT-5.2
 └──────────┬───────────┘
            │
            ▼
@@ -1661,7 +1702,7 @@ docker-compose up --build
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API key for GPT-4o-mini | Yes |
+| `OPENAI_API_KEY` | OpenAI API key for GPT-5.2 | Yes |
 | `DATABASE_URL` | SQLite connection string | No (default provided) |
 | `LOG_LEVEL` | Logging level (INFO, DEBUG) | No |
 

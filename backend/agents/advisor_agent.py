@@ -14,7 +14,7 @@ class AdvisorAgent:
     
     def __init__(self):
         self.client = OpenAI(api_key=settings.openai_api_key)
-        self.model = "gpt-4o-mini"  # Best balance: cheaper & better than gpt-3.5-turbo
+        self.model = "gpt-5.2"  # GPT-5.2 for enhanced reasoning and agentic AI
     
     def _create_system_prompt(self) -> str:
         """Create system prompt for the advisor"""
@@ -152,28 +152,54 @@ Return your response as a valid JSON object with this structure:
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=1500
+                max_completion_tokens=1500
             )
             
             recommendation_text = response.choices[0].message.content
             
-            # Check if AI is asking questions instead of providing recommendations
-            is_asking_question = any(phrase in recommendation_text.lower() for phrase in [
+            # Question-detection phrases (used for both raw text and parsed JSON reasoning)
+            question_phrases = [
                 'could you tell me', 'could you provide', 'please clarify', 
                 'i need to know', "i'd need", 'please confirm', 'can you tell',
-                'which amount', 'how much', 'how long', 'what is your'
-            ])
+                'which amount', 'how much', 'how long', 'what is your',
+                'could you confirm', 'i\'m missing', 'missing two', 'missing critical',
+                'need a few more details', 'need more details', 'can you share',
+                'please provide', 'please share', 'let me know', 'tell me more',
+                'i need to understand', 'before i can', 'before recommending',
+                'what amount', 'what duration', 'for how many years'
+            ]
+            
+            # Check if AI is asking questions instead of providing recommendations
+            is_asking_question = any(phrase in recommendation_text.lower() for phrase in question_phrases)
             
             if is_asking_question:
-                # AI is asking for clarification - return as conversational response
+                # AI is asking for clarification - extract clean text from JSON if needed
+                clean_text = recommendation_text
+                try:
+                    # If it's JSON, extract the reasoning text for display
+                    temp_text = recommendation_text
+                    if "```json" in temp_text:
+                        json_start = temp_text.find("```json") + 7
+                        json_end = temp_text.find("```", json_start)
+                        temp_text = temp_text[json_start:json_end].strip()
+                    elif "```" in temp_text:
+                        json_start = temp_text.find("```") + 3
+                        json_end = temp_text.find("```", json_start)
+                        temp_text = temp_text[json_start:json_end].strip()
+                    parsed = json.loads(temp_text)
+                    if isinstance(parsed, dict) and parsed.get('reasoning'):
+                        clean_text = parsed['reasoning']
+                except (json.JSONDecodeError, ValueError):
+                    pass  # Not JSON, use original text
+                
                 logger.info("AI is asking clarifying questions")
                 return {
                     "type": "question",
-                    "message": recommendation_text,
+                    "message": clean_text,
                     "portfolio": {},
                     "expected_return_annual": 0,
                     "risk_level": risk_profile.get('risk_category', 'Moderate'),
-                    "reasoning": recommendation_text,
+                    "reasoning": clean_text,
                     "action_steps": ["Please provide the requested information above"],
                     "is_question": True
                 }
@@ -192,6 +218,21 @@ Return your response as a valid JSON object with this structure:
                 
                 recommendation = json.loads(recommendation_text)
                 recommendation["is_question"] = False
+                
+                # Re-check: if parsed JSON has a reasoning that's actually a question
+                parsed_reasoning = recommendation.get('reasoning', '')
+                if parsed_reasoning and any(phrase in parsed_reasoning.lower() for phrase in question_phrases):
+                    logger.info("Detected clarifying question inside JSON response")
+                    return {
+                        "type": "question",
+                        "message": parsed_reasoning,
+                        "portfolio": {},
+                        "expected_return_annual": 0,
+                        "risk_level": risk_profile.get('risk_category', 'Moderate'),
+                        "reasoning": parsed_reasoning,
+                        "action_steps": recommendation.get('action_steps', ["Please provide the requested information above"]),
+                        "is_question": True
+                    }
             except json.JSONDecodeError:
                 # If JSON parsing fails, create structured response
                 recommendation = self._create_fallback_recommendation(

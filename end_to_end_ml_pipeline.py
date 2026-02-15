@@ -1005,19 +1005,12 @@ def save_model_and_artifacts(model, feature_importance_df, selected_features,
     
     print(f"\n✓ Saving model and artifacts to: {output_dir}")
     
-    import pickle
     import json
     
-    # Save XGBoost model in JSON format (for risk_agent.py compatibility)
+    # Save XGBoost model in JSON format
     model_path = f"{output_dir}/risk_model.json"
     model.save_model(model_path)
     print(f"  ✓ Model saved: {model_path}")
-    
-    # Also save as pickle for backup
-    pkl_path = f"{output_dir}/risk_profiling_model.pkl"
-    with open(pkl_path, 'wb') as f:
-        pickle.dump(model, f)
-    print(f"  ✓ Model pickle saved: {pkl_path}")
     
     # Save feature importance
     importance_path = f"{output_dir}/feature_importance.csv"
@@ -1276,7 +1269,6 @@ def main():
     
     print(f"\n📁 Output Files:")
     print(f"  • Model: {OUTPUT_DIR}/risk_model.json")
-    print(f"  • Model Pickle: {OUTPUT_DIR}/risk_profiling_model.pkl")
     print(f"  • Feature Importance: {OUTPUT_DIR}/feature_importance.csv")
     print(f"  • Selected Features: {OUTPUT_DIR}/selected_features.json")
     print(f"  • Best Parameters: {OUTPUT_DIR}/best_params.json")

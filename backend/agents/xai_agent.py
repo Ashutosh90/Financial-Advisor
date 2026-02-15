@@ -1,7 +1,7 @@
 """
 XAI Agent - Provides explainability for ML predictions using SHAP and LIME
 Responsibilities: Generate interpretable explanations for model decisions,
-                  simplify explanations using GPT-4o mini for end users
+                  simplify explanations using GPT-5.2 for end users
 """
 import shap
 import lime
@@ -22,7 +22,7 @@ class XAIAgent:
     Uses:
     - SHAP (SHapley Additive exPlanations) for global and local feature importance
     - LIME (Local Interpretable Model-agnostic Explanations) for instance-level explanations
-    - OpenAI GPT-4o mini for simplifying technical explanations into user-friendly language
+    - OpenAI GPT-5.2 for simplifying technical explanations into user-friendly language
     """
     
     def __init__(self, risk_agent=None):
@@ -263,7 +263,7 @@ class XAIAgent:
         customer_data: Dict = None
     ) -> str:
         """
-        Use GPT-4o mini to simplify technical SHAP/LIME explanations into user-friendly language
+        Use GPT-5.2 to simplify technical SHAP/LIME explanations into user-friendly language
         
         Args:
             shap_explanation: SHAP explanation dict
@@ -338,17 +338,17 @@ Use Indian Rupee (₹) for currency values.
 """
             
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5.2",
                 messages=[
                     {"role": "system", "content": "You are a friendly financial advisor who explains complex AI decisions in simple terms."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=500
+                max_completion_tokens=500
             )
             
             simplified_explanation = response.choices[0].message.content
-            logger.info(f"Generated simplified explanation using GPT-4o-mini")
+            logger.info(f"Generated simplified explanation using GPT-5.2")
             return simplified_explanation
             
         except Exception as e:
@@ -419,7 +419,7 @@ Use Indian Rupee (₹) for currency values.
             features_df: Prepared features DataFrame (required for SHAP/LIME)
             use_shap: Whether to generate SHAP explanation
             use_lime: Whether to generate LIME explanation
-            simplify_with_llm: Whether to use GPT-4o-mini for simplification
+            simplify_with_llm: Whether to use GPT-5.2 for simplification
             
         Returns:
             Dict with comprehensive explanation
@@ -474,7 +474,7 @@ Use Indian Rupee (₹) for currency values.
                     customer_data
                 )
                 result["simplified_explanation"] = simplified
-                result["explanation_methods_used"].append("GPT-4o-mini")
+                result["explanation_methods_used"].append("GPT-5.2")
             else:
                 # Use rule-based simplification
                 result["simplified_explanation"] = self._rule_based_simplification(
@@ -604,7 +604,7 @@ Use Indian Rupee (₹) for currency values.
         """
         Explain why specific investment recommendations were made
         
-        Uses technical analysis and optionally GPT-4o-mini for user-friendly explanation
+        Uses technical analysis and optionally GPT-5.2 for user-friendly explanation
         """
         portfolio = recommendation.get("portfolio", {})
         risk_level = recommendation.get("risk_level", "Moderate")
@@ -658,7 +658,7 @@ Use Indian Rupee (₹) for currency values.
         market_data: Dict,
         technical_explanation: Dict
     ) -> str:
-        """Use GPT-4o-mini to simplify recommendation explanation"""
+        """Use GPT-5.2 to simplify recommendation explanation"""
         try:
             portfolio = recommendation.get("portfolio", {})
             risk_level = recommendation.get("risk_level", "Moderate")
@@ -693,13 +693,13 @@ Use Indian Rupee (₹) for any currency references.
 """
             
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5.2",
                 messages=[
                     {"role": "system", "content": "You are a friendly financial advisor explaining investment recommendations simply."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=400
+                max_completion_tokens=400
             )
             
             return response.choices[0].message.content

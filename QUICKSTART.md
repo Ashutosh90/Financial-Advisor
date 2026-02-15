@@ -231,7 +231,7 @@ After getting it running:
    - System architecture and agent details
    - Complete data dictionary with 112 features grouped by category
    - ML pipeline, feature engineering, and model performance
-   - XAI (SHAP, LIME, GPT-4o-mini) implementation
+   - XAI (SHAP, LIME, GPT-5.2) implementation
    - Database schema and API documentation
 2. **Explore API** at http://localhost:8000/docs
 3. **Test different scenarios** in Streamlit

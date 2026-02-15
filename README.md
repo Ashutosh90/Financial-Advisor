@@ -32,8 +32,8 @@ An intelligent, multi-agent AI system that provides personalized financial inves
 - **Frontend**: Streamlit
 - **ML**: XGBoost, Scikit-learn
 - **ML Tracking**: MLflow (experiment tracking, model registry)
-- **Explainability**: SHAP, LIME, GPT-4o-mini
-- **LLM**: OpenAI GPT-4o-mini
+- **Explainability**: SHAP, LIME, GPT-5.2
+- **LLM**: OpenAI GPT-5.2
 - **Orchestration**: LangGraph/LangChain
 - **Database**: SQLite (user data + ML training data)
 - **CI/CD**: GitHub Actions (drift detection, auto-retraining)
@@ -73,7 +73,6 @@ financial-advisor/
 ├── logs/                          # Application logs
 ├── models/                        # Trained ML models
 │   ├── risk_model.json            # XGBoost model
-│   ├── risk_profiling_model.pkl   # Model pickle
 
 │   ├── selected_features.json     # Feature list
 │   ├── best_params.json           # Hyperparameters
@@ -553,7 +552,6 @@ The CI/CD pipeline is defined in `.github/workflows/model-cicd.yml`:
 
 All model artifacts are stored in `models/`:
 - `risk_model.json` - XGBoost model (JSON format)
-- `risk_profiling_model.pkl` - Model pickle backup
 - `selected_features.json` - List of selected features
 - `feature_engineering_config.json` - Feature engineering transformations & encodings
 - `best_params.json` - Optimized hyperparameters

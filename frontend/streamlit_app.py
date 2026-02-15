@@ -4,6 +4,7 @@ Interactive dashboard for users to get investment advice
 """
 import streamlit as st
 import requests
+import json
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -410,256 +411,134 @@ def main():
         st.header("🤖 AI Financial Advisor")
         st.markdown(f"### Personalized Advice for Customer #{st.session_state.customer_id}")
         
-        # Mode selection
-        st.markdown("### Choose Your Input Method")
-        mode_col1, mode_col2 = st.columns(2)
+        st.markdown("---")
         
-        with mode_col1:
-            if st.button("💬 Chat Mode", use_container_width=True, help="Ask questions in natural language", key="chat_mode_btn"):
-                st.session_state.input_mode = 'chat'
-        with mode_col2:
-            if st.button("📝 Form Mode", use_container_width=True, help="Fill out structured form", key="form_mode_btn"):
-                st.session_state.input_mode = 'form'
+        # CHAT MODE
+        st.subheader("💬 Chat with AI Financial Advisor")
         
-        # Initialize mode in session state
-        if 'input_mode' not in st.session_state:
-            st.session_state.input_mode = 'chat'
+        # Show example queries
+        with st.expander("💡 Example Questions", expanded=False):
+            st.markdown("""
+            **Investment Planning:**
+            - "I want to invest ₹8 lakhs in 4 years for my daughter's higher education"
+            - "Need to invest ₹10 lakhs for 5 years for my child's education with moderate risk"
+            - "I want to save ₹5 lakhs in 2 years for a car with conservative risk tolerance"
+            
+            **Portfolio Questions:**
+            - "What's the best portfolio allocation for my risk profile?"
+            - "How should I diversify my investments?"
+            - "What are the recommended investment instruments for me?"
+            
+            **General Advice:**
+            - "Provide investment recommendations based on my risk profile"
+            - "What investment strategy suits my financial situation?"
+            - "How can I maximize returns while managing risk?"
+            """)
         
-        # Display current mode
-        if st.session_state.input_mode == 'chat':
-            st.success("✅ **Chat Mode Active** - Ask your questions naturally")
-        else:
-            st.success("✅ **Form Mode Active** - Fill in all details")
+        # Initialize chat history
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Display chat history
+        chat_container = st.container()
+        with chat_container:
+            for i, message in enumerate(st.session_state.chat_history):
+                if message['role'] == 'user':
+                    st.markdown(f"""
+                    <div style="background-color: #1f1f1f; padding: 15px; border-radius: 10px; margin: 10px 0;">
+                        <b>👤 You:</b><br>{message['content']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div style="background-color: #0e4c92; padding: 15px; border-radius: 10px; margin: 10px 0;">
+                        <b>🤖 AI Advisor:</b><br>{message['content']}
+                    </div>
+                    """, unsafe_allow_html=True)
         
         st.markdown("---")
         
-        if st.session_state.input_mode == 'chat':
-            # CHAT MODE
-            st.subheader("💬 Chat with AI Financial Advisor")
-            
-            # Show example queries
-            with st.expander("💡 Example Questions", expanded=False):
-                st.markdown("""
-                **Investment Planning:**
-                - "I want to invest ₹8 lakhs in 4 years for my daughter's higher education"
-                - "Need to invest ₹10 lakhs for 5 years for my child's education with moderate risk"
-                - "I want to save ₹5 lakhs in 2 years for a car with conservative risk tolerance"
-                
-                **Portfolio Questions:**
-                - "What's the best portfolio allocation for my risk profile?"
-                - "How should I diversify my investments?"
-                - "What are the recommended investment instruments for me?"
-                
-                **General Advice:**
-                - "Provide investment recommendations based on my risk profile"
-                - "What investment strategy suits my financial situation?"
-                - "How can I maximize returns while managing risk?"
-                """)
-            
-            # Initialize chat history
-            if 'chat_history' not in st.session_state:
-                st.session_state.chat_history = []
-            
-            # Display chat history
-            chat_container = st.container()
-            with chat_container:
-                if len(st.session_state.chat_history) == 0:
-                    st.markdown("""
-                    <div style="background-color: #1a3a52; padding: 20px; border-radius: 10px; border-left: 4px solid #1f77b4;">
-                        <h3 style="color: #ffffff; margin-top: 0;">💡 Start chatting! Examples:</h3>
-                        <ul style="color: #e0e0e0; line-height: 1.8;">
-                            <li>'Want to invest ₹8 lakhs in 4 years for my daughter's higher education'</li>
-                            <li>'I want to save ₹5 lakhs in 2 years for a car with conservative risk tolerance'</li>
-                            <li>'Need to invest ₹10 lakhs for 5 years for my child's education with moderate risk preference'</li>
-                        </ul>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                for i, message in enumerate(st.session_state.chat_history):
-                    if message['role'] == 'user':
-                        st.markdown(f"""
-                        <div style="background-color: #1f1f1f; padding: 15px; border-radius: 10px; margin: 10px 0;">
-                            <b>👤 You:</b><br>{message['content']}
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div style="background-color: #0e4c92; padding: 15px; border-radius: 10px; margin: 10px 0;">
-                            <b>🤖 AI Advisor:</b><br>{message['content']}
-                        </div>
-                        """, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            # Input field and send button
-            col_input, col_button = st.columns([4, 1])
-            
-            with col_input:
-                user_message = st.text_input(
-                    "Type your message...",
-                    placeholder="Type your investment query here...",
-                    key="chat_input_field",
-                    label_visibility="collapsed"
-                )
-            
-            with col_button:
-                send_button = st.button("Send 📤", use_container_width=True, type="primary", key="send_chat_btn")
-            
-            # Clear chat button
-            if len(st.session_state.chat_history) > 0:
-                if st.button("🗑️ Clear Chat", use_container_width=True, key="clear_chat_btn"):
-                    st.session_state.chat_history = []
-                    if 'last_result' in st.session_state:
-                        del st.session_state['last_result']
-                    if 'current_session_id' in st.session_state:
-                        del st.session_state['current_session_id']
-                    st.rerun()
-            
-            if send_button and user_message:
-                # Add user message to chat history
-                st.session_state.chat_history.append({
-                    'role': 'user',
-                    'content': user_message
-                })
-                
-                # Get session_id from previous interactions (for conversation continuity)
-                session_id = st.session_state.get('current_session_id', None)
-                
-                # Get AI response
-                with st.spinner("🤖 AI is thinking..."):
-                    result = get_customer_investment_advice(
-                        st.session_state.customer_id, 
-                        user_message,
-                        session_id=session_id
-                    )
-                    
-                    if result and result.get('recommendation'):
-                        # Store session_id for future requests (conversation continuity)
-                        if result.get('session_id'):
-                            st.session_state.current_session_id = result['session_id']
-                        
-                        recommendation = result['recommendation']
-                        # Get the reasoning/recommendation text
-                        ai_response = recommendation.get('reasoning', recommendation.get('recommendation', 'I apologize, I could not generate a recommendation.'))
-                        
-                        # Add AI response to chat history
-                        st.session_state.chat_history.append({
-                            'role': 'assistant',
-                            'content': ai_response
-                        })
-                        
-                        # Store the full result for display
-                        st.session_state.last_result = result
-                    else:
-                        st.session_state.chat_history.append({
-                            'role': 'assistant',
-                            'content': "I apologize, I encountered an error. Could you please rephrase your question?"
-                        })
-                
-                st.rerun()
-            
-            if not user_message and send_button:
-                st.warning("⚠️ Please type a message before sending")
+        # Input field and send button
+        col_input, col_button = st.columns([4, 1])
         
-        else:
-            # FORM MODE
-            st.subheader("📝 Investment Details Form")
-            st.info("💡 Fill in all the details below to get a complete investment plan in one go")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**💰 Financial Information**")
-                monthly_income = st.number_input(
-                    "Monthly Income (₹)",
-                    min_value=10000,
-                    max_value=10000000,
-                    value=50000,
-                    step=5000,
-                    help="Your monthly income",
-                    key="form_monthly_income"
-                )
-                
-                monthly_expenses = st.number_input(
-                    "Monthly Expenses (₹)",
-                    min_value=0,
-                    max_value=10000000,
-                    value=30000,
-                    step=5000,
-                    help="Your average monthly expenses",
-                    key="form_monthly_expenses"
-                )
-                
-                investment_amount = st.number_input(
-                    "Investment Amount (₹)",
-                    min_value=1000,
-                    max_value=100000000,
-                    value=50000,
-                    step=5000,
-                    help="How much do you want to invest?",
-                    key="form_investment_amount"
-                )
-                
-            with col2:
-                st.markdown("**🎯 Investment Goals**")
-                financial_goal = st.selectbox(
-                    "Financial Goal",
-                    [
-                        "Wealth Creation",
-                        "Retirement Planning",
-                        "Child Education",
-                        "Emergency Fund",
-                        "Home Purchase",
-                        "Tax Saving"
-                    ],
-                    help="What is your primary investment goal?",
-                    key="form_financial_goal"
-                )
-                
-                duration_months = st.slider(
-                    "Investment Duration (months)",
-                    min_value=6,
-                    max_value=360,
-                    value=36,
-                    step=6,
-                    help="For how long do you want to invest?",
-                    key="form_duration"
-                )
-                
-                risk_tolerance = st.radio(
-                    "Risk Tolerance",
-                    ["Conservative", "Moderate", "Aggressive"],
-                    index=1,
-                    help="How much risk are you willing to take?",
-                    key="form_risk_tolerance"
-                )
-            
-            # Optional question/additional context
-            query = st.text_area(
-                "Additional Details or Specific Questions (Optional)",
-                placeholder="e.g., I prefer tax-saving instruments, or I want to avoid equity...",
-                height=100,
-                help="Add any specific preferences or questions",
-                key="form_query"
+        with col_input:
+            user_message = st.text_input(
+                "Type your message...",
+                placeholder="Type your investment query here...",
+                key="chat_input_field",
+                label_visibility="collapsed"
             )
-            
-            st.markdown("---")
-            
-            if st.button("🚀 Get AI Recommendation", type="primary", use_container_width=True, key="form_submit_btn"):
-                with st.spinner("🤖 AI agents are analyzing your profile..."):
-                    # Auto-generate query if empty
-                    if not query:
-                        query = f"I want to invest ₹{investment_amount:,.0f} for {duration_months} months for {financial_goal}. My risk tolerance is {risk_tolerance}."
-                    
-                    result = get_customer_investment_advice(st.session_state.customer_id, query)
-                    
-                    if result:
-                        st.session_state.last_result = result
-                        st.success("✅ Advice generated successfully!")
-                    else:
-                        st.error("❌ Failed to generate advice. Please try again.")
         
-        # Display results (for both modes)
+        with col_button:
+            send_button = st.button("Send 📤", use_container_width=True, type="primary", key="send_chat_btn")
+        
+        # Clear chat button
+        if len(st.session_state.chat_history) > 0:
+            if st.button("🗑️ Clear Chat", use_container_width=True, key="clear_chat_btn"):
+                st.session_state.chat_history = []
+                if 'last_result' in st.session_state:
+                    del st.session_state['last_result']
+                if 'current_session_id' in st.session_state:
+                    del st.session_state['current_session_id']
+                st.rerun()
+        
+        if send_button and user_message:
+            # Add user message to chat history
+            st.session_state.chat_history.append({
+                'role': 'user',
+                'content': user_message
+            })
+            
+            # Get session_id from previous interactions (for conversation continuity)
+            session_id = st.session_state.get('current_session_id', None)
+            
+            # Get AI response
+            with st.spinner("🤖 AI is thinking..."):
+                result = get_customer_investment_advice(
+                    st.session_state.customer_id, 
+                    user_message,
+                    session_id=session_id
+                )
+                
+                if result and result.get('recommendation'):
+                    # Store session_id for future requests (conversation continuity)
+                    if result.get('session_id'):
+                        st.session_state.current_session_id = result['session_id']
+                    
+                    recommendation = result['recommendation']
+                    # Get the reasoning/recommendation text
+                    # Handle case where recommendation might be a string (raw JSON) instead of dict
+                    if isinstance(recommendation, str):
+                        try:
+                            recommendation = json.loads(recommendation)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    
+                    if isinstance(recommendation, dict):
+                        ai_response = recommendation.get('reasoning', recommendation.get('recommendation', recommendation.get('message', 'I apologize, I could not generate a recommendation.')))
+                    else:
+                        ai_response = str(recommendation)
+                    
+                    # Add AI response to chat history
+                    st.session_state.chat_history.append({
+                        'role': 'assistant',
+                        'content': ai_response
+                    })
+                    
+                    # Store the full result for display
+                    st.session_state.last_result = result
+                else:
+                    st.session_state.chat_history.append({
+                        'role': 'assistant',
+                        'content': "I apologize, I encountered an error. Could you please rephrase your question?"
+                    })
+            
+            st.rerun()
+        
+        if not user_message and send_button:
+            st.warning("⚠️ Please type a message before sending")
+        
+        # Display results
         if 'last_result' in st.session_state and st.session_state.last_result:
             result = st.session_state.last_result
             st.markdown("---")
